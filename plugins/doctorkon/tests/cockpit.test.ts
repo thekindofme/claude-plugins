@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Action, Cockpit, Decision } from '../types'
-import { EMPTY, glance, hhmm, parseAsk, parseKey, queueTag, ranked, reduce } from '../hooks/cockpit'
+import { EMPTY, hhmm, parseAsk, parseBrief, parseKey, queueTag, ranked, recapDue, reduce, waiting } from '../hooks/cockpit'
 
 function decision(id: string, over: Partial<Decision> = {}): Decision {
   return {
@@ -26,13 +26,14 @@ const acme = decision('acme', { title: 'Acme onboarding', session: 'gw-dev', at:
 const deploy = decision('deploy', { title: 'Prod deploy', session: 'gw-prod', urgency: 3, urgent: true, at: 20 })
 
 describe('pain 1: updates never move the pinned decision', () => {
-  test('a status update leaves pinned, parked and drafts alone', () => {
+  test('a new status brief leaves pinned, parked and drafts alone', () => {
     const before = run({ t: 'ask', decision: acme }, { t: 'draft', id: 'acme', text: 'half typed' })
-    const after = reduce(before, { t: 'status', kind: 'shipped', session: 'web', text: 'PR 12 merged', at: 30 })
+    const brief = { summary: 'PR 12 is merged.', highlights: [{ kind: 'shipped' as const, text: 'PR 12 merged' }], at: 30 }
+    const after = reduce(before, { t: 'brief', brief })
     expect(after.pinned).toBe('acme')
     expect(after.parked).toEqual([])
     expect(after.drafts).toEqual({ acme: 'half typed' })
-    expect(after.statuses).toEqual([{ id: 1, kind: 'shipped', session: 'web', text: 'PR 12 merged', at: 30 }])
+    expect(after.brief).toEqual(brief)
   })
 
   test('a second non-urgent ask queues behind the pinned one', () => {
@@ -44,17 +45,45 @@ describe('pain 1: updates never move the pinned decision', () => {
 })
 
 describe('pain 2: status is visible without asking', () => {
-  test('glance counts kinds, decisions waiting beside the pinned one, and unread', () => {
+  test('a new brief is fresh until the person next submits, and waiting excludes the pinned one', () => {
     const s = run(
-      { t: 'status', kind: 'shipped', session: 'a', text: 'x', at: 1 },
-      { t: 'status', kind: 'shipped', session: 'a', text: 'y', at: 2 },
-      { t: 'status', kind: 'stuck', session: 'b', text: 'z', at: 3 },
-      { t: 'status', kind: 'errored', session: 'c', text: 'w', at: 4 },
+      { t: 'brief', brief: { summary: 'Done.', highlights: [], at: 1 } },
       { t: 'ask', decision: acme },
       { t: 'ask', decision: decision('later') },
     )
-    expect(glance(s)).toEqual({ shipped: 2, stuck: 1, errored: 1, waiting: 1, fresh: 4 })
-    expect(glance(reduce(s, { t: 'seen' })).fresh).toBe(0)
+    expect(s.briefFresh).toBe(true)
+    expect(waiting(s)).toBe(1)
+    expect(reduce(s, { t: 'seen' }).briefFresh).toBe(false)
+  })
+
+  test('the recap reply parses into at most two sentences and five known highlights', () => {
+    const reply = `Sure:
+{"summary": "Plugins are published. The pane is being redesigned. Tests pass.",
+ "highlights": [
+  {"kind": "shipped", "text": "doctorkon 1.0.1 published"},
+  {"kind": "problem", "text": "dev copy deleted by accident"},
+  {"kind": "noise", "text": "read a file"},
+  {"kind": "blocked", "text": "a"}, {"kind": "blocked", "text": "b"}, {"kind": "blocked", "text": "c"}, {"kind": "blocked", "text": "d"}
+ ]}`
+    expect(parseBrief(reply, 7)).toEqual({
+      summary: 'Plugins are published. The pane is being redesigned.',
+      highlights: [
+        { kind: 'shipped', text: 'doctorkon 1.0.1 published' },
+        { kind: 'problem', text: 'dev copy deleted by accident' },
+        { kind: 'blocked', text: 'a' },
+        { kind: 'blocked', text: 'b' },
+        { kind: 'blocked', text: 'c' },
+      ],
+      at: 7,
+    })
+    expect(parseBrief('no json here', 7)).toBe(undefined)
+    expect(parseBrief('{"summary": ""}', 7)).toBe(undefined)
+  })
+
+  test('a recap runs at once, then at most every two minutes', () => {
+    expect(recapDue(null, 0)).toBe(true)
+    expect(recapDue(0, 119_999)).toBe(false)
+    expect(recapDue(0, 120_000)).toBe(true)
   })
 
   test('status times read as HH:MM in the given offset', () => {
@@ -117,14 +146,13 @@ describe('pain 4: coming back keeps context and draft', () => {
     expect(s.parked).toEqual([])
     expect(s.drafts).toEqual({ acme: 'ship after the' })
     expect(s.decisions.map(d => d.id)).toEqual(['acme'])
-    expect(s.statuses[0]).toEqual({ id: 1, kind: 'answered', session: 'gw-prod', text: 'Prod deploy: Go', at: 50 })
   })
 
   test('a card that comes back from the stack with a draft is marked resumed', () => {
     const s = run(...base, { t: 'switch' }, { t: 'answer', id: 'deploy', choice: 'Go', at: 50 })
     expect(s.resumed).toBe('acme')
     expect(s.lastAnswered).toEqual({ title: 'Prod deploy', at: 50 })
-    const after = reduce(reduce(s, { t: 'status', kind: 'shipped', session: 'web', text: 'x', at: 60 }), { t: 'seen' })
+    const after = reduce(reduce(s, { t: 'brief', brief: { summary: 'x.', highlights: [], at: 60 } }), { t: 'seen' })
     expect(after.resumed).toBe('acme')
     expect(after.lastAnswered).toEqual({ title: 'Prod deploy', at: 50 })
   })

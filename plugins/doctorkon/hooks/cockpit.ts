@@ -1,17 +1,16 @@
-import type { Action, Cockpit, Decision, Kind, Status, Urgency } from '../types'
+import type { Action, Brief, Cockpit, Decision, Highlight, Kind, Urgency } from '../types'
 
-export const STATUS_CAP = 200
+export const HIGHLIGHT_CAP = 5
 
 export const EMPTY: Cockpit = {
   on: false,
-  statuses: [],
+  brief: null,
+  briefFresh: false,
   decisions: [],
   pinned: null,
   parked: [],
   interrupt: null,
   drafts: {},
-  seenId: 0,
-  nextId: 1,
   resumed: null,
   lastAnswered: null,
 }
@@ -29,21 +28,8 @@ export function byId(s: Cockpit, id: string | null): Decision | undefined {
   return id === null ? undefined : s.decisions.find(d => d.id === id)
 }
 
-export function unread(s: Cockpit): number {
-  return s.statuses.filter(x => x.id > s.seenId).length
-}
-
-export type Glance = { shipped: number; stuck: number; errored: number; waiting: number; fresh: number }
-
-export function glance(s: Cockpit): Glance {
-  const count = (k: Kind) => s.statuses.filter(x => x.kind === k).length
-  return {
-    shipped: count('shipped'),
-    stuck: count('stuck'),
-    errored: count('errored'),
-    waiting: s.decisions.filter(d => d.id !== s.pinned).length,
-    fresh: unread(s),
-  }
+export function waiting(s: Cockpit): number {
+  return s.decisions.filter(d => d.id !== s.pinned).length
 }
 
 export type Tone = 'urgent' | 'pinned' | 'release' | 'customers' | 'dim'
@@ -94,11 +80,6 @@ function pin(s: Cockpit, id: string): Cockpit {
   }
 }
 
-function logStatus(s: Cockpit, entry: Omit<Status, 'id'>): Cockpit {
-  const status: Status = { id: s.nextId, ...entry }
-  return { ...s, statuses: [status, ...s.statuses].slice(0, STATUS_CAP), nextId: s.nextId + 1 }
-}
-
 function drop(s: Cockpit, id: string): Cockpit {
   const parked = withoutId(s.parked, id)
   const wasPinned = s.pinned === id
@@ -116,14 +97,8 @@ function step(s: Cockpit, a: Action): Cockpit {
   switch (a.t) {
     case 'toggle':
       return { ...s, on: a.on }
-    case 'status':
-      return logStatus(s, {
-        kind: a.kind,
-        session: a.session,
-        text: a.text,
-        at: a.at,
-        ...(a.detail === undefined ? {} : { detail: a.detail }),
-      })
+    case 'brief':
+      return { ...s, brief: a.brief, briefFresh: true }
     case 'ask': {
       const prior = byId(s, a.decision.id)
       if (prior !== undefined) {
@@ -153,12 +128,11 @@ function step(s: Cockpit, a: Action): Cockpit {
     case 'answer': {
       const d = byId(s, a.id)
       if (d === undefined) return s
-      const logged = logStatus(s, { kind: 'answered', session: d.session, text: `${d.title}: ${a.choice}`, at: a.at })
       const popped = d.id === s.pinned && s.parked.length > 0
-      return { ...drop(logged, a.id), lastAnswered: popped ? { title: d.title, at: a.at } : null }
+      return { ...drop(s, a.id), lastAnswered: popped ? { title: d.title, at: a.at } : null }
     }
     case 'seen':
-      return { ...s, seenId: s.nextId - 1 }
+      return { ...s, briefFresh: false }
   }
 }
 
@@ -190,22 +164,54 @@ export function parseKey(text: string): Key | undefined {
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
-const KINDS: readonly Kind[] = ['shipped', 'stuck', 'errored', 'needs']
-
 function text(raw: Record<string, unknown>, key: string, max: number): string | undefined {
   const v = raw[key]
   return typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, max) : undefined
 }
 
-export function parseStatus(raw: Record<string, unknown>): Parsed<{ kind: Kind; session: string; text: string; detail?: string }> {
-  const kind = KINDS.find(k => k === raw.kind)
-  const session = text(raw, 'session', 60)
-  const body = text(raw, 'text', 300)
-  if (kind === undefined) return { ok: false, error: `kind must be one of ${KINDS.join(', ')}` }
-  if (session === undefined) return { ok: false, error: 'session is required' }
-  if (body === undefined) return { ok: false, error: 'text is required' }
-  const detail = text(raw, 'detail', 2000)
-  return { ok: true, value: { kind, session, text: body, ...(detail === undefined ? {} : { detail }) } }
+export const RECAP_EVERY_MS = 2 * 60 * 1000
+
+export function recapDue(lastAt: number | null, now: number): boolean {
+  return lastAt === null || now - lastAt >= RECAP_EVERY_MS
+}
+
+export const RECAP_PROMPT = [
+  'Write the status of this session for a person glancing at a side panel, the way /recap would.',
+  'Answer with JSON only, no code fence: {"summary": string, "highlights": [{"kind": "shipped" | "problem" | "blocked", "text": string}]}.',
+  'summary: at most two short sentences on where the work stands now and what happens next.',
+  'highlights: at most 5, most important first. Only things that matter: something shipped, published or verified; a serious bug or failure; something deleted or broken by accident; a hard blocker. Never routine steps, reads, checks or plans.',
+  'Each highlight is one line under 90 characters. The person\'s answers to [doctorkon] decisions count when they changed the plan.',
+].join(' ')
+
+const HIGHLIGHT_KINDS: readonly Kind[] = ['shipped', 'problem', 'blocked']
+
+function sentences(text: string, max: number): string {
+  const parts = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text]
+  return parts.slice(0, max).join('').trim()
+}
+
+export function parseBrief(reply: string, at: number): Brief | undefined {
+  const start = reply.indexOf('{')
+  const end = reply.lastIndexOf('}')
+  if (start < 0 || end <= start) return undefined
+  let raw: unknown
+  try {
+    raw = JSON.parse(reply.slice(start, end + 1))
+  } catch {
+    return undefined
+  }
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const r = raw as Record<string, unknown>
+  if (typeof r.summary !== 'string' || r.summary.trim() === '') return undefined
+  const highlights: Highlight[] = (Array.isArray(r.highlights) ? r.highlights : [])
+    .flatMap((h): Highlight[] => {
+      if (typeof h !== 'object' || h === null) return []
+      const { kind, text: body } = h as Record<string, unknown>
+      const k = HIGHLIGHT_KINDS.find(x => x === kind)
+      return k !== undefined && typeof body === 'string' && body.trim() !== '' ? [{ kind: k, text: body.trim().slice(0, 140) }] : []
+    })
+    .slice(0, HIGHLIGHT_CAP)
+  return { summary: sentences(r.summary.trim(), 2).slice(0, 400), highlights, at }
 }
 
 export function parseAsk(raw: Record<string, unknown>, at: number): Parsed<Decision> {

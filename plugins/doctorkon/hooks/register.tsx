@@ -7,20 +7,21 @@ import {
   answerPrompt,
   byId,
   clip,
-  glance,
   hhmm,
   parseAsk,
+  parseBrief,
   parseKey,
-  parseStatus,
   queueTag,
+  RECAP_PROMPT,
   ranked,
+  recapDue,
   reduce,
+  waiting,
 } from './cockpit'
 import type { Tone } from './cockpit'
 
 const PANE = 'doctorkon'
 const TOOL = {
-  status: 'mcp__doctorkon__doctorkon_status',
   ask: 'mcp__doctorkon__doctorkon_ask',
   resolve: 'mcp__doctorkon__doctorkon_resolve',
 } as const
@@ -49,10 +50,8 @@ const C = {
 
 const GLYPH: Record<Kind, { glyph: string; color: string }> = {
   shipped: { glyph: '✓', color: C.shipped },
-  stuck: { glyph: '‖', color: C.stuck },
-  errored: { glyph: '✗', color: C.errored },
-  needs: { glyph: '◆', color: C.needs },
-  answered: { glyph: '↳', color: C.shipped },
+  problem: { glyph: '✗', color: C.errored },
+  blocked: { glyph: '‖', color: C.stuck },
 }
 
 const TONE: Record<Tone, string> = {
@@ -69,8 +68,7 @@ function clock(ms: number): string {
 }
 
 const SYSTEM = [
-  'doctorkon cockpit is on. The person reads a pinned decision card above the prompt and a status pane, so keep chat short.',
-  'Post each outcome update (shipped, stuck, errored, needs) with the doctorkon_status tool instead of narrating it in chat.',
+  'doctorkon cockpit is on. The person reads a pinned decision card above the prompt and a status summary in a side pane that doctorkon writes from this conversation, so keep chat short.',
   'Raise every go or no-go call with doctorkon_ask. Give options, an urgency from 0 to 3 (3 blocks a release or is live to customers), a short badge, and 1 to 3 sentences of context.',
   'Set urgent true only when the call is truly time-critical. Withdraw a call that no longer applies with doctorkon_resolve.',
   'Answers arrive as prompts starting [doctorkon], naming the session, the decision title and the chosen option.',
@@ -80,6 +78,23 @@ type $ = EngineInterface
 
 async function dispatch($: $, action: Action): Promise<Cockpit> {
   return update($, cockpit, x => reduce(x, action))
+}
+
+let lastRecap: number | null = null
+let recapping = false
+
+async function recap($: $): Promise<void> {
+  if (recapping) return
+  recapping = true
+  try {
+    const at = await $.clock.now()
+    lastRecap = at
+    const reply = await $.model.fork({ prompt: RECAP_PROMPT })
+    const brief = reply.isAnswered ? parseBrief(reply.text, at) : undefined
+    if (brief !== undefined) await dispatch($, { t: 'brief', brief })
+  } finally {
+    recapping = false
+  }
 }
 
 async function answer($: $, id: string, choice: string): Promise<void> {
@@ -108,22 +123,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'doctorkon',
       description: 'Turn the doctorkon cockpit on or off',
-      argumentHint: 'on | off',
-    })
-    await $.tool.register({
-      name: 'doctorkon_status',
-      description:
-        'Post one significant outcome to the doctorkon cockpit status log instead of narrating it in chat: something shipped or verified, an error, a blocker, or a need. Never progress steps, plans or intermediate results. The person\'s answers to decisions are logged automatically. kind is shipped, stuck, errored or needs.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          kind: { type: 'string', enum: ['shipped', 'stuck', 'errored', 'needs'] },
-          session: { type: 'string', description: 'Short name of the session or workstream' },
-          text: { type: 'string', description: 'One line outcome' },
-          detail: { type: 'string', description: 'Optional longer detail' },
-        },
-        required: ['kind', 'session', 'text'],
-      },
+      argumentHint: 'on | off | recap',
     })
     await $.tool.register({
       name: 'doctorkon_ask',
@@ -159,7 +159,11 @@ export const register: Register = on => {
   on('command.run', { command: 'doctorkon' }, async ($, e) => {
     const arg = e.args.trim()
     const current = await read($, cockpit)
-    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: 'Use /doctorkon on or /doctorkon off.' }
+    if (arg === 'recap') {
+      $.clock.after(0, () => void recap($))
+      return { text: 'doctorkon is rewriting the status.' }
+    }
+    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: 'Use /doctorkon on, off or recap.' }
     const want = arg === '' ? !current.on : arg === 'on'
     await dispatch($, { t: 'toggle', on: want })
     if (want) {
@@ -169,13 +173,6 @@ export const register: Register = on => {
     await $.ui.close({ id: PANE })
     return { text: 'doctorkon cockpit off.' }
   })
-
-  on('tool.call', { tool: 'mcp__doctorkon__doctorkon_status' }, async ($, e) => {
-    const parsed = parseStatus(e)
-    if (!parsed.ok) return { deny: `doctorkon_status rejected. ${parsed.error}.` }
-    const s = await dispatch($, { t: 'status', ...parsed.value, at: await $.clock.now() })
-    return { result: `Logged status #${s.nextId - 1}.` }
-  }).catch(() => ({ deny: 'doctorkon_status failed inside the plugin.' }))
 
   on('tool.call', { tool: 'mcp__doctorkon__doctorkon_ask' }, async ($, e) => {
     const parsed = parseAsk(e, await $.clock.now())
@@ -201,6 +198,16 @@ export const register: Register = on => {
     const composed = await next(e)
     if (!(await read($, cockpit)).on) return composed
     return { sections: [...composed.sections, { id: 'doctorkon:cockpit', text: SYSTEM, scope: 'session' as const }] }
+  })
+
+  // Like /recap: a fork over this session's own cached transcript, at most every RECAP_EVERY_MS.
+  // Started on a timer so the fork outlives this dispatch instead of being cut with it.
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    if (e.agentId !== undefined || e.isAborted) return done
+    if (!(await read($, cockpit)).on || !recapDue(lastRecap, await $.clock.now())) return done
+    $.clock.after(0, () => void recap($))
+    return done
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -232,11 +239,11 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const tool = e.props.tool
-    if (tool !== TOOL.status && tool !== TOOL.ask && tool !== TOOL.resolve) return next(e)
+    if (tool !== TOOL.ask && tool !== TOOL.resolve) return next(e)
     const { Text } = $.ui.resolve(e)
     const input = (e.props.input ?? {}) as Record<string, unknown>
     const label = String(input.title ?? input.text ?? input.id ?? '')
-    const verb = tool === TOOL.status ? `status ${String(input.kind ?? '')}` : tool === TOOL.ask ? 'ask' : 'resolve'
+    const verb = tool === TOOL.ask ? 'ask' : 'resolve'
     const failed = e.props.isErrored ? ' (rejected)' : ''
     return (
       <Text dimColor wrap="truncate-end">
@@ -248,7 +255,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     const tool = e.props.tool
-    if (tool !== TOOL.status && tool !== TOOL.ask && tool !== TOOL.resolve) return next(e)
+    if (tool !== TOOL.ask && tool !== TOOL.resolve) return next(e)
     if (e.props.isErrored) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />
@@ -264,7 +271,6 @@ export const register: Register = on => {
     const Input = 'Input' in elements ? elements.Input : undefined
     const d = byId(s, s.pinned)
     const urgent = byId(s, s.interrupt)
-    const g = glance(s)
     const queue = ranked(s)
     const stack = [...s.parked, s.pinned]
       .map(id => byId(s, id))
@@ -394,16 +400,13 @@ export const register: Register = on => {
         {card}
         <Box key="glance" flexDirection="row" columnGap={1}>
           <Text color={C.blue}>doctorkon</Text>
-          <Text color={C.shipped}>✓{g.shipped}</Text>
-          <Text color={C.stuck}>‖{g.stuck}</Text>
-          <Text color={C.errored}>✗{g.errored}</Text>
-          <Text color={C.needs}>◆{g.waiting}</Text>
-          {g.fresh > 0 ? (
+          <Text color={C.needs}>◆{waiting(s)} waiting</Text>
+          {s.briefFresh ? (
             <Text color={C.ink} backgroundColor={C.blue}>
-              {' '}{g.fresh} new{' '}
+              {' '}status updated{' '}
             </Text>
           ) : (
-            <Text color={C.dim}>no new</Text>
+            <Text color={C.dim}>{s.brief === null ? 'no status yet' : `status ${clock(s.brief.at)}`}</Text>
           )}
           {urgent !== undefined && (
             <Text color={C.ink} backgroundColor={C.errored} bold wrap="truncate-end">
@@ -421,64 +424,44 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const s = await read($, cockpit)
     const cols = e.props.bodyColumns - 4
-    const g = glance(s)
     const queue = ranked(s)
-    // Waiting keeps its full height at the bottom; the status panel takes the rest and keeps the newest rows.
-    const waitRows = 2 + 1 + Math.max(1, queue.length)
-    const statusRows = Math.max(6, e.props.scroll.bodyRows - waitRows)
-    const fits = Math.max(1, statusRows - 3)
-    const recent = s.statuses.slice(0, 60).reverse()
-    const firstNewAll = recent.findIndex(x => x.id > s.seenId)
-    const room = firstNewAll >= 0 ? fits - 1 : fits
-    const shown = recent.slice(Math.max(0, recent.length - room))
-    const firstNew = shown.findIndex(x => x.id > s.seenId)
-    const ruleSide = '─'.repeat(Math.max(2, Math.floor((cols - ` ${g.fresh} new `.length) / 2)))
+    const brief = s.brief
     let rank = 0
     return (
       <Box flexDirection="column">
-        <Box key="status-panel" flexDirection="column" borderStyle="round" borderColor={C.line} paddingX={1} height={statusRows}>
-        <Box key="status-head" flexDirection="row" columnGap={1}>
-          <Text bold>Status updates</Text>
-          <Box key="status-gap" flexGrow={1} />
-          {g.fresh > 0 ? (
-            <Text bold color={C.ink} backgroundColor={C.blue}>
-              {' '}{g.fresh} new{' '}
-            </Text>
+        <Box key="status-panel" flexDirection="column" borderStyle="round" borderColor={C.line} paddingX={1} flexShrink={0}>
+          <Box key="status-head" flexDirection="row" columnGap={1}>
+            <Text bold>Status</Text>
+            <Box key="status-gap" flexGrow={1} />
+            {s.briefFresh ? (
+              <Text bold color={C.ink} backgroundColor={C.blue}>
+                {' '}updated {brief === null ? '' : clock(brief.at)}{' '}
+              </Text>
+            ) : (
+              <Text color={C.dim}>{brief === null ? '' : clock(brief.at)}</Text>
+            )}
+          </Box>
+          {brief === null ? (
+            <Text color={C.dim}>No status yet. It is written when the next turn ends.</Text>
           ) : (
-            <Text color={C.dim}>all read</Text>
+            <Text color={C.context} wrap="wrap">
+              {brief.summary}
+            </Text>
           )}
-          {g.fresh > 0 && <Button key="mark-read" plain dimColor label="mark read" onPress={() => dispatch($, { t: 'seen' })} />}
-        </Box>
-        {shown.length === 0 && <Text color={C.dim}>No updates yet.</Text>}
-        {shown.flatMap((x, i) => {
-          const isNew = x.id > s.seenId
-          const row = (
-            <Box key={`s-${x.id}`} flexDirection="row" {...(isNew ? { backgroundColor: C.unread } : {})}>
-              <Text color={C.dim}>{clock(x.at)} </Text>
-              <Text color={GLYPH[x.kind].color}>{GLYPH[x.kind].glyph} </Text>
-              <Button
-                key={`status-${x.id}`}
-                plain
-                label={clip(x.text, cols - 8)}
-                onPress={() => void $.prompt.submit({ text: `tell me more about status update #${x.id}`, asUser: true })}
-              />
+          {brief !== null && brief.highlights.length > 0 && <Text> </Text>}
+          {brief?.highlights.map((point, i) => (
+            <Box key={`point-${i}`} flexDirection="row">
+              <Text color={GLYPH[point.kind].color}>{GLYPH[point.kind].glyph} </Text>
+              <Text wrap="wrap">{clip(point.text, cols * 2)}</Text>
             </Box>
-          )
-          if (i !== firstNew) return [row]
-          return [
-            <Text key="divider" color={C.blue} wrap="truncate-end">
-              {ruleSide} {g.fresh} new {ruleSide}
-            </Text>,
-            row,
-          ]
-        })}
+          ))}
         </Box>
         <Box key="wait-panel" flexDirection="column" borderStyle="round" borderColor={C.line} paddingX={1}>
         <Box key="wait-head" flexDirection="row" columnGap={1}>
           <Text bold>Waiting on you</Text>
           <Box key="wait-gap" flexGrow={1} />
           <Text color={C.needs}>
-            ◆{g.waiting}
+            ◆{waiting(s)}
             {s.pinned !== null ? ' + 1 pinned' : ''}
           </Text>
         </Box>

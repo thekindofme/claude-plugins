@@ -9,6 +9,8 @@ const BAND_PROPS = {
   view: {},
 } as const
 
+const USAGE = { input_tokens: 10, output_tokens: 40, cache_read_input_tokens: 9000, cache_creation_input_tokens: 0 }
+
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`band option 1 answers the pinned decision on ${surface}`, async ($, on) => {
     mock.clock(on, { now: 1_000 })
@@ -36,12 +38,6 @@ for (const surface of ['terminal', 'desktop'] as const) {
       context: 'Acme wants SSO before Friday.',
       options: ['Ship Thursday', 'Hold a week'],
     })
-    await $.tool.call({
-      tool: 'mcp__doctorkon__doctorkon_status',
-      kind: 'shipped',
-      session: 'web',
-      text: 'PR 12 merged',
-    })
 
     const ui = await $.ui.mount({ plugin: 'doctorkon', surface, component: 'AbovePrompt', props: BAND_PROPS })
     expect((await ui.find({ type: 'Text', text: 'Acme onboarding' }))?.text).toBe('Acme onboarding')
@@ -55,7 +51,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.press({ key: 'opt-1' })
     expect(sent).toEqual(['[doctorkon] gw-dev / Acme onboarding: Ship Thursday'])
     expect(await ui.find({ type: 'Text', text: 'Acme onboarding' })).toBe(undefined)
-    expect((await ui.find({ type: 'Text', text: '✓1' }))?.text).toBe('✓1')
+    expect((await ui.find({ type: 'Text', text: 'waiting' }))?.text).toBe('◆0 waiting')
     expect(await ui.find({ key: 'engine-band' })).toBe(undefined)
     await ui.unmount()
   })
@@ -90,3 +86,38 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+test('a finished turn writes the Status panel from a fork of the transcript', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 3, 18) })
+  const prompts: string[] = []
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('model.fork', ($, e) => {
+    prompts.push(e.prompt)
+    return {
+      value: {
+        isAnswered: true,
+        text: '{"summary": "doctorkon is published. Next is the pane redesign.", "highlights": [{"kind": "shipped", "text": "doctorkon 1.0.1 published"}, {"kind": "problem", "text": "dev copy removed by accident"}]}',
+        usage: USAGE,
+      },
+    }
+  })
+
+  await $.command.run({ command: 'doctorkon', args: 'on', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+  await $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 10, isAborted: false, turnId: 't1' })
+  await clock.advance(0)
+
+  const pane = await $.ui.mount({
+    plugin: 'doctorkon',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'doctorkon',
+    props: { title: 'doctorkon', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  })
+  expect(prompts).toHaveLength(1)
+  expect((await pane.find({ type: 'Text', text: 'doctorkon is published' }))?.text).toBe('doctorkon is published. Next is the pane redesign.')
+  expect((await pane.find({ type: 'Text', text: 'by accident' }))?.text).toBe('dev copy removed by accident')
+  expect(await pane.find({ type: 'Text', text: 'Status updates' })).toBe(undefined)
+  await pane.unmount()
+})

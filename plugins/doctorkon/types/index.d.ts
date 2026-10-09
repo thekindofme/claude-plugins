@@ -1,11 +1,10 @@
-export type Kind = 'shipped' | 'stuck' | 'errored' | 'needs' | 'answered'
+export type Kind = 'shipped' | 'problem' | 'blocked'
 
-export type Status = {
-  id: number
-  kind: Kind
-  session: string
-  text: string
-  detail?: string
+export type Highlight = { kind: Kind; text: string }
+
+export type Brief = {
+  summary: string
+  highlights: Highlight[]
   at: number
 }
 
@@ -25,21 +24,20 @@ export type Decision = {
 
 export type Cockpit = {
   on: boolean
-  statuses: Status[]
+  brief: Brief | null
+  briefFresh: boolean
   decisions: Decision[]
   pinned: string | null
   parked: string[]
   interrupt: string | null
   drafts: Record<string, string>
-  seenId: number
-  nextId: number
   resumed: string | null
   lastAnswered: { title: string; at: number } | null
 }
 
 export type Action =
   | { t: 'toggle'; on: boolean }
-  | { t: 'status'; kind: Kind; session: string; text: string; detail?: string; at: number }
+  | { t: 'brief'; brief: Brief }
   | { t: 'ask'; decision: Decision }
   | { t: 'resolve'; id: string }
   | { t: 'pin'; id: string }
