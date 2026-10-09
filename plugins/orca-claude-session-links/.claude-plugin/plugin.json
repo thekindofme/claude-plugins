@@ -1,0 +1,8 @@
+{
+  "name": "orca-claude-session-links",
+  "displayName": "Orca × Claude Session Links",
+  "version": "1.0.0",
+  "description": "Adds a ↗ button under Claude replies that mention an Orca session tab; a click switches Orca to that tab",
+  "author": { "name": "Yasith Fernando" },
+  "license": "MIT"
+}

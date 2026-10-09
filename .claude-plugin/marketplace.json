@@ -1,0 +1,19 @@
+{
+  "name": "thekindofme-plugins",
+  "owner": {
+    "name": "Yasith Fernando"
+  },
+  "description": "Yasith's Claude Code plugins",
+  "plugins": [
+    {
+      "name": "doctorkon",
+      "source": "./plugins/doctorkon",
+      "description": "Cockpit for a session that coordinates other sessions: pinned decision above the prompt, status log and waiting queue in a pane"
+    },
+    {
+      "name": "orca-claude-session-links",
+      "source": "./plugins/orca-claude-session-links",
+      "description": "Adds a ↗ button under Claude replies that mention an Orca session tab; a click switches Orca to that tab"
+    }
+  ]
+}
