@@ -231,7 +231,7 @@ export const RECAP_PROMPT = [
   'Write the status of this session for a person glancing at a side panel, the way /recap would.',
   'Answer with JSON only, no code fence: {"summary": string, "highlights": [{"kind": "shipped" | "problem" | "blocked", "text": string}]}.',
   'summary: at most two short sentences on where the work stands now and what happens next.',
-  'highlights: at most 5, most important first. Only things that matter: something shipped, published or verified; a serious bug or failure; something deleted or broken by accident; a hard blocker. Never routine steps, reads, checks or plans.',
+  'highlights: at most 5, most important first. Only things that matter: something shipped, published or verified; a serious bug or failure; something deleted or broken by accident; a hard blocker. Never routine steps, reads, checks or plans, and never a decision still waiting on the person: the panel below already lists those.',
   'Each highlight is one line under 90 characters. The person\'s answers to [doctorkon] decisions count when they changed the plan.',
 ].join(' ')
 
