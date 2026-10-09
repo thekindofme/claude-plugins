@@ -179,6 +179,7 @@ export const register: Register = on => {
     const kept = parseSaved(await $.store.get(storeKey))
     const restored = kept !== undefined && (await read($, cockpit)).decisions.length === 0 && kept.decisions.length > 0
     if (kept !== undefined) await dispatch($, { t: 'restore', saved: kept })
+    else await $.store.set(storeKey, saved(await read($, cockpit)))
     if (restored) $.clock.after(0, () => void dropStale($))
     // The pane does not survive a reload or a reinstall; reopen it whenever the cockpit is already on.
     if ((await read($, cockpit)).on) void $.ui.open({ id: PANE, title: 'doctorkon' })
