@@ -151,6 +151,8 @@ export const register: Register = on => {
     })
     // The engine draws a plugin status line as a yellow warning notice; the band's glance row replaces it.
     $.ui.status(undefined)
+    // The pane does not survive a reload or a reinstall; reopen it whenever the cockpit is already on.
+    if ((await read($, cockpit)).on) void $.ui.open({ id: PANE, title: 'doctorkon' })
     return next(e)
   })
 
