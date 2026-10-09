@@ -116,6 +116,12 @@ test('a finished turn writes the Status panel from a fork of the transcript', as
     props: { title: 'doctorkon', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
   })
   expect(prompts).toHaveLength(1)
+  await $.turn.complete({ reason: 'answer', answer: 'again', durationMs: 10, isAborted: false, turnId: 't2' })
+  await $.turn.complete({ reason: 'answer', answer: 'and again', durationMs: 10, isAborted: false, turnId: 't3' })
+  await clock.advance(60_000)
+  expect(prompts).toHaveLength(1)
+  await clock.advance(60_000)
+  expect(prompts).toHaveLength(2)
   expect((await pane.find({ type: 'Text', text: 'doctorkon is published' }))?.text).toBe('doctorkon is published. Next is the pane redesign.')
   expect((await pane.find({ type: 'Text', text: 'by accident' }))?.text).toBe('dev copy removed by accident')
   expect(await pane.find({ type: 'Text', text: 'Status updates' })).toBe(undefined)

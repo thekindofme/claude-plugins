@@ -1,6 +1,6 @@
 {
   "name": "doctorkon",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Cockpit for a session that coordinates other sessions: pinned decision above the prompt, status log and waiting queue in a pane",
   "author": {
     "name": "Yasith Fernando"

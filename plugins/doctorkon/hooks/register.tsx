@@ -12,6 +12,7 @@ import {
   parseBrief,
   parseKey,
   queueTag,
+  RECAP_EVERY_MS,
   RECAP_PROMPT,
   ranked,
   recapDue,
@@ -82,6 +83,7 @@ async function dispatch($: $, action: Action): Promise<Cockpit> {
 
 let lastRecap: number | null = null
 let recapping = false
+let trailing = false
 
 async function recap($: $): Promise<void> {
   if (recapping) return
@@ -205,8 +207,18 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     if (e.agentId !== undefined || e.isAborted) return done
-    if (!(await read($, cockpit)).on || !recapDue(lastRecap, await $.clock.now())) return done
-    $.clock.after(0, () => void recap($))
+    if (!(await read($, cockpit)).on) return done
+    const now = await $.clock.now()
+    if (recapDue(lastRecap, now)) {
+      $.clock.after(0, () => void recap($))
+    } else if (!trailing && lastRecap !== null) {
+      // A turn inside the window still gets summarised once the window ends.
+      trailing = true
+      $.clock.after(lastRecap + RECAP_EVERY_MS - now, () => {
+        trailing = false
+        void recap($)
+      })
+    }
     return done
   })
 
