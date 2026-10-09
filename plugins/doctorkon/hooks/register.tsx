@@ -11,12 +11,16 @@ import {
   parseAsk,
   parseBrief,
   parseKey,
+  parseSaved,
+  parseStale,
   queueTag,
   RECAP_EVERY_MS,
   RECAP_PROMPT,
   ranked,
   recapDue,
   reduce,
+  saved,
+  stalePrompt,
   waiting,
 } from './cockpit'
 import type { Tone } from './cockpit'
@@ -77,8 +81,26 @@ const SYSTEM = [
 
 type $ = EngineInterface
 
+let storeKey: string | null = null
+
 async function dispatch($: $, action: Action): Promise<Cockpit> {
-  return update($, cockpit, x => reduce(x, action))
+  const next = await update($, cockpit, x => reduce(x, action))
+  if (storeKey !== null) await $.store.set(storeKey, saved(next))
+  return next
+}
+
+// Keyed by the Orca tab, which survives a restart; a resumed conversation gets a new session id.
+async function cockpitKey($: $): Promise<string> {
+  const tab = await $.env.get('ORCA_TERMINAL_HANDLE')
+  return `cockpit:${tab ?? await $.session.id()}`
+}
+
+async function dropStale($: $): Promise<void> {
+  const open = (await read($, cockpit)).decisions
+  if (open.length === 0) return
+  const reply = await $.model.fork({ prompt: stalePrompt(open) })
+  if (!reply.isAnswered) return
+  for (const id of parseStale(reply.text, open.map(d => d.id))) await dispatch($, { t: 'resolve', id })
 }
 
 let lastRecap: number | null = null
@@ -153,6 +175,11 @@ export const register: Register = on => {
     })
     // The engine draws a plugin status line as a yellow warning notice; the band's glance row replaces it.
     $.ui.status(undefined)
+    storeKey = await cockpitKey($)
+    const kept = parseSaved(await $.store.get(storeKey))
+    const restored = kept !== undefined && (await read($, cockpit)).decisions.length === 0 && kept.decisions.length > 0
+    if (kept !== undefined) await dispatch($, { t: 'restore', saved: kept })
+    if (restored) $.clock.after(0, () => void dropStale($))
     // The pane does not survive a reload or a reinstall; reopen it whenever the cockpit is already on.
     if ((await read($, cockpit)).on) void $.ui.open({ id: PANE, title: 'doctorkon' })
     return next(e)

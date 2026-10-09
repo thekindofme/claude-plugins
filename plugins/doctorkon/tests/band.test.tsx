@@ -127,3 +127,43 @@ test('a finished turn writes the Status panel from a fork of the transcript', as
   expect(await pane.find({ type: 'Text', text: 'Status updates' })).toBe(undefined)
   await pane.unmount()
 })
+
+test('decisions survive a restart, and ones the conversation settled are withdrawn', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 9, 3, 18) })
+  const store = new Map<string, unknown>()
+  const decision = (id: string, title: string) => ({ id, title, session: 'gw', urgency: 1, badge: 'normal', context: 'c', options: ['Go', 'Hold'], urgent: false, at: 1 })
+  store.set('cockpit:term_test_a', {
+    on: true,
+    brief: null,
+    decisions: [decision('merge', 'Merge #99'), decision('ship', 'Ship to prod')],
+    pinned: 'merge',
+    parked: [],
+    interrupt: null,
+    drafts: { merge: 'after the' },
+  })
+  on('env.get', () => ({ value: 'term_test_a' }))
+  on('store.get', ($, e) => ({ value: store.get(e.key) }))
+  on('store.set', ($, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('tool.register', ($, e) => ({ value: { tool: e.name } }))
+  on('model.fork', () => ({ value: { isAnswered: true, text: '{"stale": ["merge", "made-up"]}', usage: USAGE } }))
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box key="engine-band" />
+  })
+
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount({ plugin: 'doctorkon', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  expect((await ui.find({ type: 'Text', text: 'Ship to prod' }))?.text).toBe('Ship to prod')
+  expect(await ui.find({ type: 'Text', text: 'Merge #99' })).toBe(undefined)
+  expect((store.get('cockpit:term_test_a') as { decisions: { id: string }[] }).decisions.map(d => d.id)).toEqual(['ship'])
+  await ui.unmount()
+})

@@ -35,9 +35,12 @@ export type Cockpit = {
   lastAnswered: { title: string; at: number } | null
 }
 
+export type Saved = Pick<Cockpit, 'on' | 'brief' | 'decisions' | 'pinned' | 'parked' | 'interrupt' | 'drafts'>
+
 export type Action =
   | { t: 'toggle'; on: boolean }
   | { t: 'brief'; brief: Brief }
+  | { t: 'restore'; saved: Saved }
   | { t: 'ask'; decision: Decision }
   | { t: 'resolve'; id: string }
   | { t: 'pin'; id: string }

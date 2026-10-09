@@ -1,4 +1,4 @@
-import type { Action, Brief, Cockpit, Decision, Highlight, Kind, Urgency } from '../types'
+import type { Action, Brief, Cockpit, Decision, Highlight, Kind, Saved, Urgency } from '../types'
 
 export const HIGHLIGHT_CAP = 5
 
@@ -99,6 +99,8 @@ function step(s: Cockpit, a: Action): Cockpit {
       return { ...s, on: a.on }
     case 'brief':
       return { ...s, brief: a.brief, briefFresh: true }
+    case 'restore':
+      return s.decisions.length > 0 || s.brief !== null ? s : { ...s, ...a.saved, briefFresh: false }
     case 'ask': {
       const prior = byId(s, a.decision.id)
       if (prior !== undefined) {
@@ -167,6 +169,56 @@ type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 function text(raw: Record<string, unknown>, key: string, max: number): string | undefined {
   const v = raw[key]
   return typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, max) : undefined
+}
+
+export function saved(s: Cockpit): Saved {
+  return { on: s.on, brief: s.brief, decisions: s.decisions, pinned: s.pinned, parked: s.parked, interrupt: s.interrupt, drafts: s.drafts }
+}
+
+// Parsed at the boundary: the store is a JSON file anyone can edit, and older versions wrote other shapes.
+export function parseSaved(raw: unknown): Saved | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const r = raw as Record<string, unknown>
+  if (!Array.isArray(r.decisions)) return undefined
+  const decisions = r.decisions.flatMap((d): Decision[] => {
+    if (typeof d !== 'object' || d === null) return []
+    const parsed = parseAsk(d as Record<string, unknown>, typeof (d as Record<string, unknown>).at === 'number' ? ((d as Record<string, unknown>).at as number) : 0)
+    return parsed.ok ? [parsed.value] : []
+  })
+  const ids = new Set(decisions.map(d => d.id))
+  const known = (v: unknown): string | null => (typeof v === 'string' && ids.has(v) ? v : null)
+  const brief = typeof r.brief === 'object' && r.brief !== null ? parseBrief(JSON.stringify(r.brief), Number((r.brief as Record<string, unknown>).at) || 0) : undefined
+  const drafts = typeof r.drafts === 'object' && r.drafts !== null ? (r.drafts as Record<string, unknown>) : {}
+  return {
+    on: r.on === true,
+    brief: brief ?? null,
+    decisions,
+    pinned: known(r.pinned),
+    parked: Array.isArray(r.parked) ? r.parked.flatMap(x => (known(x) === null ? [] : [x as string])) : [],
+    interrupt: known(r.interrupt),
+    drafts: Object.fromEntries(Object.entries(drafts).filter(([k, v]) => ids.has(k) && typeof v === 'string')) as Record<string, string>,
+  }
+}
+
+export function stalePrompt(decisions: readonly Decision[]): string {
+  return [
+    'doctorkon restored these open decisions after a restart:',
+    ...decisions.map(d => `- ${d.id}: ${d.title} (${d.context})`),
+    'Using this conversation, list the ids that no longer need the person: already answered or decided, done, withdrawn, or overtaken by events.',
+    'Keep any you are unsure about. Answer with JSON only, no code fence: {"stale": ["id", ...]}.',
+  ].join('\n')
+}
+
+export function parseStale(reply: string, ids: readonly string[]): string[] {
+  const start = reply.indexOf('{')
+  const end = reply.lastIndexOf('}')
+  if (start < 0 || end <= start) return []
+  try {
+    const raw = JSON.parse(reply.slice(start, end + 1)) as { stale?: unknown }
+    return Array.isArray(raw.stale) ? ids.filter(id => (raw.stale as unknown[]).includes(id)) : []
+  } catch {
+    return []
+  }
 }
 
 export const RECAP_EVERY_MS = 2 * 60 * 1000

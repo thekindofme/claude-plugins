@@ -6,7 +6,7 @@ A cockpit for a Claude Code session that coordinates other sessions. The session
 - **Status, in a side pane.** At most two sentences on where the session stands, plus up to 5 highlights: something shipped, a serious problem, a blocker. doctorkon writes it itself when a turn ends, the way `/recap` does, by asking the session about its own transcript (at most every two minutes). `/doctorkon recap` rewrites it now.
 - **Waiting on you, below the updates.** Every open decision, ranked by urgency.
 
-`doctorkon_resolve` withdraws a decision that no longer applies. `/doctorkon on|off` turns the cockpit on or off.
+`doctorkon_resolve` withdraws a decision that no longer applies. Open decisions and the status survive a restart: they are saved per Orca tab (per session outside Orca), and on load doctorkon asks the session which restored decisions are already settled and withdraws those. `/doctorkon on|off` turns the cockpit on or off.
 
 Colours follow your Claude Code theme. The pane docks beside the transcript in fullscreen mode (`/tui fullscreen`).
 
