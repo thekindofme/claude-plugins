@@ -19,6 +19,11 @@
       "name": "clear-writing",
       "source": "./plugins/clear-writing",
       "description": "Plain-English explanations without LLM tells, recap-first answers you drill into, and from-scratch rewrites of patched-together documents"
+    },
+    {
+      "name": "visual-explainers",
+      "source": "./plugins/visual-explainers",
+      "description": "Animated one-page diagrams, navigable HTML reports, 45-second TL;DR videos, and whiteboard videos synced to a talk"
     }
   ]
 }

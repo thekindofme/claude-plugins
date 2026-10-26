@@ -1,0 +1,8 @@
+{
+  "name": "visual-explainers",
+  "version": "1.0.0",
+  "description": "Explain things visually: animated one-page diagrams, navigable HTML reports, 45-second TL;DR videos, and whiteboard videos synced to a talk",
+  "author": {
+    "name": "Yasith Fernando"
+  }
+}

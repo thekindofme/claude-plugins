@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: 'Virgil'; src: url('Virgil.woff2') format('woff2'); }
+  html,body { margin:0; padding:0; background:#ffffff; }
+  #cv { display:block; }
+</style>
+<script src="rough.js"></script>
+</head>
+<body>
+<canvas id="cv" width="1920" height="1080"></canvas>
+<script src="meta.js"></script>
+<script src="scenes.js"></script>
+<script src="renderer_core.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const t0 = parseFloat(params.get('t') || '1');
+document.fonts.load('50px Virgil').then(() => document.fonts.ready).then(() => {
+  render(t0);
+  window.__done = true;
+});
+</script>
+</body>
+</html>

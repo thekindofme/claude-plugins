@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Whiteboard Companion</title>
+<style>
+  @font-face { font-family:'Virgil'; src:url('Virgil.woff2') format('woff2'); }
+  :root {
+    --bg:#1c1e21; --panel:#26282c; --chip:#33363b; --chip-hover:#41454c;
+    --accent:#e8590c; --blue:#4dabf7; --text:#e9ecef; --dim:#909aa4;
+  }
+  html,body { margin:0; background:var(--bg); font-family:'Virgil',system-ui,sans-serif; color:var(--text); height:100%; overflow:hidden; }
+  #wrap { width:min(97vw, calc((100vh - 270px) * 16 / 9)); margin:12px auto 0; height:calc(100vh - 12px);
+          display:flex; flex-direction:column; }
+
+  #stage { position:relative; width:100%; flex-shrink:0; aspect-ratio:16/9; background:#fff;
+           border-radius:12px; overflow:hidden; box-shadow:0 10px 44px rgba(0,0,0,.55); }
+  #cv  { position:absolute; inset:0; width:100%; height:100%; }
+  #vid { position:absolute; left:75.52%; top:72.4%; width:22.92%; height:22.96%; object-fit:cover; }
+
+  /* ---------- controls ---------- */
+  #bar { display:flex; gap:12px; align-items:center; margin:12px 2px 8px; }
+  .btn { font-family:inherit; font-size:17px; background:var(--chip); border:none; color:var(--text);
+         border-radius:9px; padding:7px 14px; cursor:pointer; line-height:1; transition:background .15s; }
+  .btn:hover { background:var(--chip-hover); }
+  #play { background:var(--blue); color:#102a43; font-size:19px; padding:7px 18px; min-width:56px; }
+  #speed { font-family:inherit; font-size:15px; background:var(--chip); color:var(--text);
+           border:none; border-radius:9px; padding:7px 8px; cursor:pointer; }
+  #clock { font-size:15px; color:var(--dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
+
+  /* ---------- scrubber ---------- */
+  #scrub { position:relative; flex:1; height:26px; cursor:pointer; }
+  #scrub .track { position:absolute; left:0; right:0; top:10px; height:6px; border-radius:3px; background:var(--chip); }
+  #scrub .fill  { position:absolute; left:0; top:10px; height:6px; border-radius:3px 0 0 3px;
+                  background:var(--blue); width:0; pointer-events:none; }
+  #scrub .tick  { position:absolute; top:8px; width:2px; height:10px; background:#5b6067; pointer-events:none; }
+  #scrub .dot   { position:absolute; top:6px; width:14px; height:14px; border-radius:50%;
+                  background:#fff; margin-left:-7px; box-shadow:0 1px 5px rgba(0,0,0,.6); pointer-events:none; }
+  #scrub:hover .track, #scrub:hover .fill { height:8px; top:9px; }
+  #hoverTip { position:absolute; bottom:22px; transform:translateX(-50%); background:#0b0c0d; color:var(--text);
+              font-size:12px; padding:3px 8px; border-radius:6px; white-space:nowrap; display:none; pointer-events:none; z-index:5; }
+
+  #now { font-size:15px; color:var(--dim); margin:0 2px 6px; min-height:20px; }
+  #now b { color:var(--accent); font-weight:normal; }
+
+  /* ---------- segment list ---------- */
+  #segs { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:7px; margin:6px 0 8px;
+          flex:1; min-height:0; overflow-y:auto; align-content:start; padding-right:4px; scrollbar-width:thin; }
+  .seg { display:flex; align-items:baseline; gap:8px; font-size:13.5px; padding:7px 11px; border-radius:8px;
+         background:var(--panel); cursor:pointer; transition:background .15s, transform .05s; }
+  .seg:hover { background:var(--chip-hover); }
+  .seg:active { transform:scale(.98); }
+  .seg .n { color:var(--dim); min-width:22px; text-align:right; }
+  .seg .t { flex:1; }
+  .seg .ts { color:var(--dim); font-size:12px; font-variant-numeric:tabular-nums; }
+  .seg.live { background:var(--accent); }
+  .seg.live .n, .seg.live .ts { color:#ffe3d3; }
+  .seg.done .t { color:var(--dim); }
+  #hint { text-align:center; color:var(--dim); font-size:12.5px; margin:2px 0 10px; flex-shrink:0; }
+  #hint kbd { background:var(--chip); border-radius:4px; padding:1px 6px; font-family:inherit; }
+</style>
+<script src="rough.js"></script>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="cv" width="1920" height="1080"></canvas>
+    <video id="vid" src="source.mp4" playsinline></video>
+  </div>
+
+  <div id="bar">
+    <button class="btn" id="play">▶</button>
+    <button class="btn" id="back">−15s</button>
+    <button class="btn" id="fwd">+15s</button>
+    <div id="scrub">
+      <div class="track"></div><div class="fill"></div><div class="dot"></div>
+      <div id="hoverTip"></div>
+    </div>
+    <span id="clock">0:00 / 0:00</span>
+    <select id="speed">
+      <option value="1" selected>1×</option><option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option><option value="2">2×</option>
+    </select>
+  </div>
+  <div id="now"></div>
+  <div id="segs"></div>
+  <div id="hint"><kbd>space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> ±15s · <kbd>↑</kbd><kbd>↓</kbd> prev/next segment</div>
+</div>
+
+<script src="meta.js"></script>
+<script src="scenes.js"></script>
+<script src="renderer_core.js"></script>
+<script>
+document.title = (typeof META !== 'undefined' && META.title) || document.title;
+const vid   = document.getElementById('vid');
+if (typeof META !== 'undefined' && META.videoFile) vid.src = META.videoFile;
+const segsEl= document.getElementById('segs');
+const nowEl = document.getElementById('now');
+const clock = document.getElementById('clock');
+const playB = document.getElementById('play');
+const scrub = document.getElementById('scrub');
+const fill  = scrub.querySelector('.fill');
+const dot   = scrub.querySelector('.dot');
+const tip   = document.getElementById('hoverTip');
+
+const fmt = s => { s = Math.max(0, s|0); const m = (s/60)|0; return `${m}:${String(s%60).padStart(2,'0')}`; };
+
+// seek WITHOUT touching play/paused state
+function seekTo(t) { vid.currentTime = Math.max(0, Math.min(t, vid.duration || t)); }
+
+// ---------- segment chips ----------
+SCENES.forEach((s, i) => {
+  const d = document.createElement('div');
+  d.className = 'seg';
+  d.innerHTML = `<span class="n">${i+1}.</span><span class="t"></span><span class="ts">${fmt(s.start)}</span>`;
+  d.querySelector('.t').textContent = s.title;
+  d.onclick = () => seekTo(s.start + 0.2);
+  segsEl.appendChild(d);
+});
+
+// ---------- scrubber ----------
+function buildTicks() {
+  SCENES.forEach(s => {
+    if (!s.start || !vid.duration) return;
+    const t = document.createElement('div');
+    t.className = 'tick';
+    t.style.left = (s.start / vid.duration * 100) + '%';
+    scrub.appendChild(t);
+  });
+}
+vid.addEventListener('loadedmetadata', buildTicks, { once:true });
+
+function scrubTime(ev) {
+  const r = scrub.getBoundingClientRect();
+  const f = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+  return f * (vid.duration || 0);
+}
+let dragging = false;
+scrub.addEventListener('pointerdown', ev => { dragging = true; scrub.setPointerCapture(ev.pointerId); seekTo(scrubTime(ev)); });
+scrub.addEventListener('pointermove', ev => {
+  if (dragging) seekTo(scrubTime(ev));
+  const t = scrubTime(ev), sc = sceneAt(t)[0];
+  tip.style.display = 'block';
+  tip.style.left = (Math.max(30, Math.min(scrub.clientWidth - 30, ev.clientX - scrub.getBoundingClientRect().left))) + 'px';
+  tip.textContent = `${fmt(t)} — ${sc.title}`;
+});
+scrub.addEventListener('pointerup',   () => dragging = false);
+scrub.addEventListener('pointerleave',() => { tip.style.display = 'none'; });
+
+// ---------- transport ----------
+const togglePlay = () => vid.paused ? vid.play() : vid.pause();
+playB.onclick = togglePlay;
+document.getElementById('back').onclick = () => seekTo(vid.currentTime - 15);
+document.getElementById('fwd').onclick  = () => seekTo(vid.currentTime + 15);
+document.getElementById('speed').onchange = e => vid.playbackRate = parseFloat(e.target.value);
+vid.addEventListener('play',  () => playB.textContent = '⏸');
+vid.addEventListener('pause', () => playB.textContent = '▶');
+vid.addEventListener('click', togglePlay);
+
+document.addEventListener('keydown', ev => {
+  if (ev.target.tagName === 'SELECT') return;
+  const [sc, si] = sceneAt(vid.currentTime);
+  if (ev.code === 'Space')      { ev.preventDefault(); togglePlay(); }
+  if (ev.key  === 'ArrowLeft')  { ev.preventDefault(); seekTo(vid.currentTime - 15); }
+  if (ev.key  === 'ArrowRight') { ev.preventDefault(); seekTo(vid.currentTime + 15); }
+  if (ev.key  === 'ArrowUp')    { ev.preventDefault(); seekTo(SCENES[Math.max(0, si - 1)].start + 0.2); }
+  if (ev.key  === 'ArrowDown')  { ev.preventDefault(); seekTo(SCENES[Math.min(SCENES.length - 1, si + 1)].start + 0.2); }
+});
+
+// ---------- render loop ----------
+let lastT = -1, lastLive = -1;
+function tick() {
+  const t = vid.currentTime;
+  if (Math.abs(t - lastT) > 0.12) {
+    lastT = t;
+    const [sc, si] = sceneAt(t);
+    renderAt(t);
+    const drawn = sc.els.filter(e => e.at <= t).length;
+    nowEl.innerHTML = `part ${si+1}/${SCENES.length} — <b></b> · ${drawn}/${sc.els.length} strokes on the board`;
+    nowEl.querySelector('b').textContent = sc.title;
+    clock.textContent = `${fmt(t)} / ${fmt(vid.duration || 0)}`;
+    const f = vid.duration ? (t / vid.duration * 100) : 0;
+    fill.style.width = f + '%';
+    dot.style.left = f + '%';
+    if (si !== lastLive) {
+      lastLive = si;
+      [...segsEl.children].forEach((d, i) => {
+        d.classList.toggle('live', i === si);
+        d.classList.toggle('done', i < si);
+      });
+      segsEl.children[si].scrollIntoView({ block:'nearest', behavior:'smooth' });
+    }
+  }
+  requestAnimationFrame(tick);
+}
+document.fonts.load('50px Virgil').then(() => document.fonts.ready).then(() => { renderAt(0.5); tick(); });
+</script>
+</body>
+</html>

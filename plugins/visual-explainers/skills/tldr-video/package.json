@@ -1,0 +1,8 @@
+{
+  "name": "tldr-video-skill",
+  "private": true,
+  "description": "Renderer deps for the tldr-video skill",
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

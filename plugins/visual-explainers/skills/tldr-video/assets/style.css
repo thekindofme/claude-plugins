@@ -1,0 +1,123 @@
+/* tldr-video — "paper + mono" look. Stage is a fixed 1280x720 coordinate space. */
+@font-face { font-family: 'JB Mono'; font-weight: 400; src: url('fonts/jbmono-400.woff2') format('woff2'); }
+@font-face { font-family: 'JB Mono'; font-weight: 500; src: url('fonts/jbmono-500.woff2') format('woff2'); }
+@font-face { font-family: 'JB Mono'; font-weight: 700; src: url('fonts/jbmono-700.woff2') format('woff2'); }
+@font-face { font-family: 'JB Mono'; font-weight: 800; src: url('fonts/jbmono-800.woff2') format('woff2'); }
+
+:root {
+  --paper: #f5f3ec;
+  --ink: #1f1f1f;
+  --line: #2a2a2a;
+  --gray: #8d8a82;
+  --faint: #c9c6bc;
+  --white: #ffffff;
+  --amber: #f2c14e;
+  --amber-pale: #fbe8b4;
+  --red: #c8553d;
+  --red-pale: #f6d6cd;
+  --green: #4f8a5b;
+  --green-pale: #d5e8d4;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #111; }
+body { font-family: 'JB Mono', ui-monospace, Menlo, monospace; color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+#stage {
+  position: relative; width: 1280px; height: 720px; overflow: hidden;
+  background: var(--paper); transform-origin: 0 0;
+}
+
+/* ---- frame chrome ---- */
+.fr-border { position: absolute; inset: 26px; border: 1.5px solid var(--line); pointer-events: none; }
+.fr-tick { position: absolute; width: 9px; height: 9px; border: 0 solid var(--line); }
+.fr-tick.tl { left: 20px; top: 20px; border-left-width: 3px; border-top-width: 3px; }
+.fr-tick.tr { right: 20px; top: 20px; border-right-width: 3px; border-top-width: 3px; }
+.fr-tick.bl { left: 20px; bottom: 20px; border-left-width: 3px; border-bottom-width: 3px; }
+.fr-tick.br { right: 20px; bottom: 20px; border-right-width: 3px; border-bottom-width: 3px; }
+.fr-source { position: absolute; left: 66px; bottom: 40px; font-size: 13px; font-weight: 500; color: var(--gray); letter-spacing: .04em; text-transform: uppercase; }
+.fr-source b { font-weight: 500; text-transform: none; }
+
+.scene { position: absolute; inset: 0; }
+.sc-head { position: absolute; left: 66px; top: 76px; display: flex; align-items: center; gap: 12px; }
+.sc-num { background: var(--amber); font-size: 13px; font-weight: 800; padding: 3px 7px 2px; letter-spacing: .04em; }
+.sc-title { font-size: 25px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.sc-rule { position: absolute; left: 66px; top: 121px; height: 2.5px; width: 280px; background: var(--line); transform-origin: 0 50%; }
+
+/* ---- generic positioned element ---- */
+.el { position: absolute; }
+
+/* ---- box / window ---- */
+.box { background: var(--white); border: 2px solid var(--line); }
+.box-bar { height: 36px; border-bottom: 2px solid var(--line); display: flex; align-items: center; gap: 10px; padding: 0 14px; white-space: nowrap; overflow: hidden; }
+.box-title { font-size: 14px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.box-sub { font-size: 12px; font-weight: 500; color: var(--gray); }
+.box-body { padding: 18px 20px; font-size: 20px; font-weight: 700; line-height: 1.75; }
+.box-body.big { font-size: 25px; line-height: 1.35; }
+
+/* ---- text helpers ---- */
+.t-label { font-size: 13px; font-weight: 700; color: var(--gray); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.t-note { font-size: 15px; font-weight: 500; color: var(--gray); line-height: 1.5; }
+.t-body { font-size: 20px; font-weight: 700; line-height: 1.5; }
+.t-big { font-size: 30px; font-weight: 800; line-height: 1.25; }
+.t-huge { font-size: 64px; font-weight: 800; line-height: 1.05; letter-spacing: -.01em; }
+.hl { background: var(--amber-pale); padding: 1px 5px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.hl-hot { background: var(--amber); padding: 1px 5px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.hl-red { background: var(--red-pale); color: var(--red); padding: 1px 5px; }
+.c-red { color: var(--red); } .c-gray { color: var(--gray); } .c-green { color: var(--green); }
+
+.tok { padding: 1px 0; }
+.tok.new { background: var(--amber-pale); }
+.tok.mark { background: var(--amber-pale); }
+.cursor { display: inline-block; width: 11px; height: 1.05em; background: var(--ink); vertical-align: -0.18em; margin-left: 4px; }
+
+/* ---- connector ---- */
+.conn-line { position: absolute; height: 2px; background: var(--line); transform-origin: 0 50%; }
+.conn-packet { position: absolute; background: var(--amber); border: 2px solid var(--line); font-size: 11px; font-weight: 800; padding: 3px 9px 2px; white-space: nowrap; transform: translate(-50%, -50%); }
+.conn-head { position: absolute; width: 0; height: 0; border-left: 10px solid var(--line); border-top: 6px solid transparent; border-bottom: 6px solid transparent; transform-origin: 0 50%; }
+
+/* ---- counter ---- */
+.counter { font-size: 32px; font-weight: 800; color: var(--gray); padding: 0 7px; white-space: nowrap; }
+.counter.bad { color: var(--red); background: var(--red-pale); }
+.counter.good { color: var(--ink); background: var(--amber); }
+
+/* ---- score bars / choice rows ---- */
+.bar-row { position: absolute; display: flex; align-items: center; gap: 14px; height: 50px; }
+.chip { border: 2px solid var(--line); background: var(--white); font-size: 15px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; display: flex; align-items: center; justify-content: center; height: 100%; white-space: nowrap; padding: 0 14px; }
+.chip.on { background: var(--amber); }
+.chip.off { color: var(--faint); border-color: var(--faint); }
+.bar-track { width: 210px; height: 17px; border: 1.5px solid var(--gray); background: var(--white); position: relative; }
+.bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gray); }
+.bar-fill.on { background: var(--ink); }
+.bar-val { font-size: 16px; font-weight: 700; min-width: 48px; }
+
+/* ---- lists ---- */
+.lst-title { display: inline-block; font-size: 21px; font-weight: 800; padding: 3px 9px; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 18px; }
+.lst-title.good { background: var(--amber); }
+.lst-title.bad { background: var(--red-pale); color: var(--red); }
+.lst-title.plain { background: var(--ink); color: var(--paper); }
+.lst-item { font-size: 20px; font-weight: 700; line-height: 1.55; white-space: nowrap; position: relative; width: max-content; }
+.lst-item .mk { display: inline-block; width: 22px; }
+.lst-item.bad .mk { color: var(--red); }
+.lst-item .strike { position: absolute; left: 20px; right: -4px; top: 52%; height: 2px; background: var(--ink); transform-origin: 0 50%; }
+.lst-item.bad .txt { color: var(--gray); }
+
+/* ---- caption + punchline ---- */
+.cap { position: absolute; left: 66px; bottom: 124px; font-size: 20px; font-weight: 700; white-space: nowrap; }
+.punch { position: absolute; left: 66px; bottom: 76px; font-size: 31px; font-weight: 800; background: var(--amber); padding: 1px 9px; white-space: nowrap; transform-origin: 0 50%; }
+
+/* ---- stat tile ---- */
+.stat-val { font-size: 76px; font-weight: 800; line-height: 1; letter-spacing: -.02em; white-space: nowrap; }
+.stat-label { font-size: 16px; font-weight: 700; color: var(--gray); margin-top: 10px; letter-spacing: .04em; text-transform: uppercase; }
+
+/* ---- timeline steps ---- */
+.step { position: absolute; border: 2px solid var(--line); background: var(--white); font-size: 16px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 10px; }
+.step.on { background: var(--amber); }
+.step.dim { color: var(--gray); border-color: var(--faint); }
+
+/* ---- preview player chrome (hidden when rendering) ---- */
+#player { position: fixed; left: 0; right: 0; bottom: 0; height: 46px; background: #1b1b1b; color: #ddd; display: flex; align-items: center; gap: 12px; padding: 0 14px; font-size: 12px; z-index: 10; }
+#player button { background: #333; color: #eee; border: 0; font: inherit; padding: 6px 12px; cursor: pointer; }
+#player input[type=range] { flex: 1; }
+body.render #player { display: none; }
+body.render { background: var(--paper); overflow: hidden; }
