@@ -1,0 +1,8 @@
+{
+  "name": "mac-dev",
+  "version": "1.0.0",
+  "description": "macOS developer chores for Claude: reclaim disk space safely, keep AWS SSO logged in, and run an always-on Mac as a headless agent host",
+  "author": {
+    "name": "Yasith Fernando"
+  }
+}

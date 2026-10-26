@@ -9,6 +9,7 @@ Yasith's Claude Code plugins, as one marketplace.
 | [clear-writing](plugins/clear-writing) | Skills for plain-English explanations, recap-first answers and rewriting patched-together documents |
 | [visual-explainers](plugins/visual-explainers) | Skills for animated diagrams, navigable HTML reports, TL;DR videos and whiteboard videos |
 | [session-tools](plugins/session-tools) | A trace viewer for sessions and subagents, and a ranked walkthrough of open decisions |
+| [mac-dev](plugins/mac-dev) | macOS runbooks: disk cleanup, AWS SSO auto-refresh, headless agent host |
 
 ## Install
 

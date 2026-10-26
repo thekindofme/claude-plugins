@@ -29,6 +29,11 @@
       "name": "session-tools",
       "source": "./plugins/session-tools",
       "description": "Searchable trace viewer for a session and its subagents, and a ranked walkthrough of the decisions waiting on you"
+    },
+    {
+      "name": "mac-dev",
+      "source": "./plugins/mac-dev",
+      "description": "Reclaim Mac disk space safely, keep AWS SSO logged in, and run an always-on Mac as a headless agent host"
     }
   ]
 }
