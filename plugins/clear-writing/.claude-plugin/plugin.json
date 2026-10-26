@@ -1,0 +1,8 @@
+{
+  "name": "clear-writing",
+  "version": "1.0.0",
+  "description": "Make Claude explain and write for humans: plain-English explanations without LLM tells, recap-first answers you drill into, and from-scratch rewrites of patched-together documents",
+  "author": {
+    "name": "Yasith Fernando"
+  }
+}

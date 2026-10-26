@@ -14,6 +14,11 @@
       "name": "orca-claude-session-links",
       "source": "./plugins/orca-claude-session-links",
       "description": "Adds a ↗ button under Claude replies that mention an Orca session tab; a click switches Orca to that tab"
+    },
+    {
+      "name": "clear-writing",
+      "source": "./plugins/clear-writing",
+      "description": "Plain-English explanations without LLM tells, recap-first answers you drill into, and from-scratch rewrites of patched-together documents"
     }
   ]
 }
