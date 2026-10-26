@@ -19,5 +19,3 @@ Installing doctorkon also installs orca-claude-session-links. To install it alon
 ```
 /plugin install orca-claude-session-links@thekindofme-plugins
 ```
-
-The repository is private, so your GitHub credentials must be able to read it.
