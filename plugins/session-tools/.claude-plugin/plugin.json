@@ -1,0 +1,8 @@
+{
+  "name": "session-tools",
+  "version": "1.0.0",
+  "description": "Render a Claude Code session and its subagents as a searchable trace viewer, and walk through the decisions waiting on you in chat or on one page",
+  "author": {
+    "name": "Yasith Fernando"
+  }
+}

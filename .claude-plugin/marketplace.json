@@ -24,6 +24,11 @@
       "name": "visual-explainers",
       "source": "./plugins/visual-explainers",
       "description": "Animated one-page diagrams, navigable HTML reports, 45-second TL;DR videos, and whiteboard videos synced to a talk"
+    },
+    {
+      "name": "session-tools",
+      "source": "./plugins/session-tools",
+      "description": "Searchable trace viewer for a session and its subagents, and a ranked walkthrough of the decisions waiting on you"
     }
   ]
 }
