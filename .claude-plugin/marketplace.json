@@ -34,6 +34,14 @@
       "name": "mac-dev",
       "source": "./plugins/mac-dev",
       "description": "Reclaim Mac disk space safely, keep AWS SSO logged in, and run an always-on Mac as a headless agent host"
+    },
+    {
+      "name": "bg-watchdog",
+      "source": {
+        "source": "github",
+        "repo": "thekindofme/claude-bg-watchdog"
+      },
+      "description": "Hooks that catch background tasks, subagents and monitors that die, time out or finish without the session acting on them"
     }
   ]
 }

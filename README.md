@@ -10,6 +10,7 @@ Yasith's Claude Code plugins, as one marketplace.
 | [visual-explainers](plugins/visual-explainers) | Skills for animated diagrams, navigable HTML reports, TL;DR videos and whiteboard videos |
 | [session-tools](plugins/session-tools) | A trace viewer for sessions and subagents, and a ranked walkthrough of open decisions |
 | [mac-dev](plugins/mac-dev) | macOS runbooks: disk cleanup, AWS SSO auto-refresh, headless agent host |
+| [bg-watchdog](https://github.com/thekindofme/claude-bg-watchdog) | Hooks that catch background tasks, subagents and monitors that die or finish unnoticed |
 
 ## Install
 
